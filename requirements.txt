@@ -1,0 +1,2 @@
+PyMuPDF>=1.18.14 # Or a newer compatible version
+Pillow>=8.0.0 # Or a newer compatible version 
