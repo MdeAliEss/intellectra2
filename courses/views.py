@@ -7,5 +7,15 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
 
 class CourseViewSet(viewsets.ModelViewSet):
-    queryset = Course.objects.all()
+    queryset = Course.objects.all() 
     serializer_class = CourseSerializer
+
+    def perform_create(self, serializer):
+        course = serializer.save()
+        # Additional logic to handle PDF and video processing can go here
+        if course.pdfs:
+            # Process PDF file
+            pass
+        if course.videos:
+            # Process video file
+            pass

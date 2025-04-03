@@ -1,10 +1,11 @@
+# serializers.py
 from rest_framework import serializers
 from .models import Course, Category, CourseSection, CoursePdfInternal
 
 class CourseSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = CourseSection
-        exclude = ['pdf_data']
+        fields = ['id', 'title', 'content', 'order']  # Adjust fields as necessary
 
 class CoursePdfInternalSerializer(serializers.ModelSerializer):
     sections = CourseSectionSerializer(many=True, read_only=True)
@@ -20,16 +21,12 @@ class CourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'id', 'title', 'description', 'file', 'image', 'file_type',
-            'duration', 'rating', 'created_at', 'professor', 'category',
-            'pdf_internal_data'
+            'id', 'title', 'description', 'pdfs', 'videos', 'image', 
+            'file_type', 'duration', 'rating', 'created_at', 'professor', 
+            'category', 'pdf_internal_data'
         ]
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = '__all__'
-
-
-
-

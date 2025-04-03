@@ -60,7 +60,8 @@ class CourseSection(models.Model):
 class Course(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
-    file = models.FileField(upload_to='courses/',null=True, blank=True)
+    pdfs = models.FileField(upload_to='courses/pdfs/', null=True, blank=True, verbose_name='PDF Document')
+    videos = models.FileField(upload_to='courses/videos/', null=True, blank=True, verbose_name='Video File')
     image = models.ImageField(upload_to='images/', null=True, blank=True)
     file_type = models.CharField(max_length=50, choices=[('pdf', 'PDF'), ('video', 'Video')], default='video')
     duration = models.CharField(max_length=20, blank=True)
@@ -81,15 +82,15 @@ class Course(models.Model):
         from the PDF file, prioritizing embedded TOC if available.
         Returns: tuple(list_of_sections, list_of_toc_entries)
         """
-        if not self.file or self.file_type != 'pdf':
-            logger.debug(f"Extraction skipped for {getattr(self.file, 'name', 'N/A')}: Not a PDF or no file.")
+        if not self.pdfs or self.file_type != 'pdf':
+            logger.debug(f"Extraction skipped for {getattr(self.pdfs, 'name', 'N/A')}: Not a PDF or no file.")
             return [], []
 
         sections = []
         toc = []
         file_path = None # Initialize file_path
         try:
-            file_path = os.path.join(settings.MEDIA_ROOT, self.file.name)
+            file_path = os.path.join(settings.MEDIA_ROOT, self.pdfs.name)
             if not os.path.exists(file_path):
                 logger.warning(f"PDF file not found at {file_path}")
                 return [], []
@@ -100,7 +101,7 @@ class Course(models.Model):
             # --- Attempt 1: Use Embedded TOC ---
             embedded_toc = doc.get_toc(simple=False)
             if embedded_toc:
-                logger.info(f"Attempting extraction using embedded TOC for {self.file.name}")
+                logger.info(f"Attempting extraction using embedded TOC for {self.pdfs.name}")
                 toc_sections = []
                 toc_entries = []
                 section_order = 0
@@ -152,7 +153,7 @@ class Course(models.Model):
                     logger.warning("Embedded TOC found but yielded no sections. Falling back to heuristic.")
 
             # --- Attempt 2: Refined Heuristic Method (Fallback) ---
-            logger.info(f"Using heuristic extraction for {self.file.name}")
+            logger.info(f"Using heuristic extraction for {self.pdfs.name}")
             sections = []
             toc = []
             current_section_data = None
@@ -201,7 +202,7 @@ class Course(models.Model):
             logger.info(f"Heuristic extraction finished. Found {len(sections)} sections.")
 
         except Exception as e:
-            logger.error(f"Error processing PDF {file_path or getattr(self.file, 'name', 'N/A')}: {e}", exc_info=True)
+            logger.error(f"Error processing PDF {file_path or getattr(self.pdfs, 'name', 'N/A')}: {e}", exc_info=True)
             return [], []
 
         return sections, toc
@@ -226,31 +227,26 @@ def process_course_pdf(sender, instance, created, **kwargs):
         pdf_data_instance = None
 
     # Case 1: New course with a PDF file
-    if created and instance.file and instance.file_type == 'pdf':
+    if created and instance.pdfs and instance.file_type == 'pdf':
         should_process = True
         logger.info(f"New course with PDF detected: {instance.title}")
 
     # Case 2: Existing course, file changed TO a PDF or PDF file was updated
-    elif not created and instance.file and instance.file_type == 'pdf':
-        # If internal data exists, check if filename changed. If not, check if file content changed (simple check).
-        # A more robust check would involve file hashing.
+    elif not created and instance.pdfs and instance.file_type == 'pdf':
         if pdf_data_instance:
-            if pdf_data_instance.name != instance.file.name:
+            if pdf_data_instance.name != instance.pdfs.name:
                 should_process = True
                 logger.info(f"PDF filename change detected for: {instance.title}")
-            # Add a check here if you want to re-process even if filename is same (e.g., file content updated)
-            # For simplicity, we only re-process on filename change or if becoming PDF
         else:
-            # No previous internal data, but now it's a PDF
             should_process = True
             logger.info(f"Course updated to PDF type: {instance.title}")
 
     # Case 3: Course type changed FROM PDF or file removed
-    elif not created and (instance.file_type != 'pdf' or not instance.file):
+    elif not created and (instance.file_type != 'pdf' or not instance.pdfs):
         if pdf_data_instance:
             logger.info(f"PDF removed or type changed for: {instance.title}. Deleting internal data.")
-            pdf_data_instance.delete() # Also cascades to delete sections
-            return # Stop processing
+            pdf_data_instance.delete()  # Also cascades to delete sections
+            return  # Stop processing
 
     # --- Perform Processing ---
     if should_process:
@@ -265,9 +261,9 @@ def process_course_pdf(sender, instance, created, **kwargs):
             logger.info(f"Extracted {len(extracted_sections)} sections and {len(extracted_toc)} TOC entries.")
 
             # Update CoursePdfInternal fields
-            pdf_data_instance.name = instance.file.name
+            pdf_data_instance.name = instance.pdfs.name
             pdf_data_instance.table_of_contents = extracted_toc
-            pdf_data_instance.save() # Save name and toc
+            pdf_data_instance.save()  # Save name and toc
 
             # Delete old sections before creating new ones
             pdf_data_instance.sections.all().delete()
@@ -275,7 +271,7 @@ def process_course_pdf(sender, instance, created, **kwargs):
             # Create CourseSection objects linked to pdf_data_instance
             for section_data in extracted_sections:
                 CourseSection.objects.create(
-                    pdf_data=pdf_data_instance, # Link to the internal data object
+                    pdf_data=pdf_data_instance,  # Link to the internal data object
                     title=section_data['title'],
                     content=section_data['content'],
                     order=section_data['order']
@@ -283,3 +279,4 @@ def process_course_pdf(sender, instance, created, **kwargs):
             logger.info(f"Successfully processed and saved sections for course: {instance.title}")
         except Exception as e:
             logger.error(f"Error in process_course_pdf signal for course {instance.pk}: {e}", exc_info=True)
+    
