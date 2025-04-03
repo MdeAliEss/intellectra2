@@ -60,7 +60,7 @@ class CourseSection(models.Model):
 class Course(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
-    file = models.FileField(upload_to='courses/')
+    file = models.FileField(upload_to='courses/',null=True, blank=True)
     image = models.ImageField(upload_to='images/', null=True, blank=True)
     file_type = models.CharField(max_length=50, choices=[('pdf', 'PDF'), ('video', 'Video')], default='video')
     duration = models.CharField(max_length=20, blank=True)
@@ -160,7 +160,7 @@ class Course(models.Model):
             MAIN_HEADING_PATTERN = re.compile(r"^(?:[IVXLCDM]+\.|[A-Z]\.|[0-9]+\.)\s+.{3,}", re.IGNORECASE)
             SUB_HEADING_PATTERN = re.compile(r"^(?:[a-z]\.|[0-9]+\.[0-9]+(?:\.[0-9]+)*)\s+.{3,}", re.IGNORECASE)
             for page_num in range(len(doc)):
-                if page_num == 0 and len(doc) > 1: continue
+                #if page_num == 0 and len(doc) > 1: continue
                 page = doc.load_page(page_num)
                 blocks = page.get_text("blocks", sort=True)
                 for b in blocks:
