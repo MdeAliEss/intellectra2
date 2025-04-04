@@ -88,80 +88,18 @@ class Course(models.Model):
 
         sections = []
         toc = []
-        file_path = None # Initialize file_path
+        seen_titles = set()  # To track titles that have already been added
+        current_section_data = None
+        section_order = 0
+        MAIN_HEADING_PATTERN = re.compile(r"^(?:[IVXLCDM]+\.|[A-Z]\.|[0-9]+\.)\s+.{3,}", re.IGNORECASE)
+        SUB_HEADING_PATTERN = re.compile(r"^(?:[a-z]\.|[0-9]+\.[0-9]+(?:\.[0-9]+)*)\s+.{3,}", re.IGNORECASE)
+
         try:
             file_path = os.path.join(settings.MEDIA_ROOT, self.pdfs.name)
-            if not os.path.exists(file_path):
-                logger.warning(f"PDF file not found at {file_path}")
-                return [], []
-
-            logger.info(f"Opening PDF: {file_path}")
             doc = fitz.open(file_path)
 
-            # --- Attempt 1: Use Embedded TOC ---
-            embedded_toc = doc.get_toc(simple=False)
-            if embedded_toc:
-                logger.info(f"Attempting extraction using embedded TOC for {self.pdfs.name}")
-                toc_sections = []
-                toc_entries = []
-                section_order = 0
-                top_level_entries = []
-                for i, entry in enumerate(embedded_toc):
-                    level, title, page_num, dest = entry
-                    if level == 1:
-                        pos_y = dest.get('to', fitz.Point(0, 0)).y if isinstance(dest, dict) else 0
-                        top_level_entries.append({
-                            'title': title.strip(), 'page_idx': page_num - 1,
-                            'pos_y': pos_y, 'original_index': i
-                        })
-                top_level_entries.sort(key=lambda x: (x['page_idx'], x['pos_y']))
-                for i, entry_info in enumerate(top_level_entries):
-                    title = entry_info['title']
-                    start_page_idx = entry_info['page_idx']
-                    start_pos_y = entry_info['pos_y']
-                    end_page_idx = len(doc) - 1
-                    end_pos_y = float('inf')
-                    if i + 1 < len(top_level_entries):
-                        next_entry = top_level_entries[i+1]
-                        end_page_idx = next_entry['page_idx']
-                        end_pos_y = next_entry['pos_y']
-                    current_content = ""
-                    for p_idx in range(start_page_idx, end_page_idx + 1):
-                        if p_idx >= len(doc): break
-                        page = doc.load_page(p_idx)
-                        clip_y0 = start_pos_y if p_idx == start_page_idx else 0
-                        clip_y1 = end_pos_y if p_idx == end_page_idx else float('inf')
-                        if p_idx == start_page_idx and p_idx == end_page_idx and clip_y1 - clip_y0 < 10:
-                            clip_y1 = float('inf')
-                        clip_rect = fitz.Rect(page.rect.x0, clip_y0, page.rect.x1, clip_y1)
-                        page_text = page.get_text(clip=clip_rect).strip()
-                        if p_idx == start_page_idx and page_text.startswith(title):
-                            page_text = page_text[len(title):].strip()
-                        if page_text:
-                            current_content += page_text + "\n"
-                    if title and current_content:
-                        toc_sections.append({
-                            'title': title, 'content': current_content.strip(), 'order': section_order
-                        })
-                        toc_entries.append({'title': title, 'order': section_order})
-                        section_order += 1
-                if toc_sections:
-                    logger.info(f"Successfully extracted {len(toc_sections)} sections using embedded TOC.")
-                    doc.close()
-                    return toc_sections, toc_entries
-                else:
-                    logger.warning("Embedded TOC found but yielded no sections. Falling back to heuristic.")
-
-            # --- Attempt 2: Refined Heuristic Method (Fallback) ---
-            logger.info(f"Using heuristic extraction for {self.pdfs.name}")
-            sections = []
-            toc = []
-            current_section_data = None
-            section_order = 0
-            MAIN_HEADING_PATTERN = re.compile(r"^(?:[IVXLCDM]+\.|[A-Z]\.|[0-9]+\.)\s+.{3,}", re.IGNORECASE)
-            SUB_HEADING_PATTERN = re.compile(r"^(?:[a-z]\.|[0-9]+\.[0-9]+(?:\.[0-9]+)*)\s+.{3,}", re.IGNORECASE)
+            # --- Attempt to extract sections ---
             for page_num in range(len(doc)):
-                #if page_num == 0 and len(doc) > 1: continue
                 page = doc.load_page(page_num)
                 blocks = page.get_text("blocks", sort=True)
                 for b in blocks:
@@ -169,43 +107,41 @@ class Course(models.Model):
                     lines = block_text.split('\n')
                     if not lines: continue
                     first_line = lines[0].strip()
-                    if not first_line or len(first_line) > 150:
-                        if current_section_data:
-                            current_section_data['content'] += block_text + "\n"
-                        continue
+
+                    # Check if the first line is a potential title
                     is_potential_title = False
                     title_text = first_line
                     is_main_heading = MAIN_HEADING_PATTERN.match(first_line)
                     is_sub_heading = SUB_HEADING_PATTERN.match(first_line)
+
                     if is_main_heading and not is_sub_heading:
                         is_potential_title = True
-                    if first_line.lower() in ["table of contents", "contents", "index", "abstract", "introduction"]:
-                        if first_line.lower() != "introduction":
-                            is_potential_title = False
-                    if is_potential_title:
+
+                    # If it's a potential title and not seen before
+                    if is_potential_title and title_text not in seen_titles:
                         if current_section_data:
-                            sections.append(current_section_data)
+                            sections.append(current_section_data)  # Save the previous section
                         current_section_data = {
                             'title': title_text,
-                            'content': "\n".join(lines[1:]),
+                            'content': "\n".join(lines[1:]),  # Start new section content
                             'order': section_order
                         }
                         toc.append({'title': title_text, 'order': section_order})
+                        seen_titles.add(title_text)  # Add title to the set
                         section_order += 1
                     elif current_section_data:
-                        current_section_data['content'] += block_text + "\n"
-                if current_section_data:
-                    sections.append(current_section_data)
-                for section in sections:
-                    section['content'] = re.sub(r'\n{2,}', '\n', section['content']).strip()
-            doc.close()
-            logger.info(f"Heuristic extraction finished. Found {len(sections)} sections.")
+                        current_section_data['content'] += block_text + "\n"  # Append to current section
+
+            # Append the last section if it exists
+            if current_section_data:
+                sections.append(current_section_data)
+
+            logger.info(f"Successfully extracted {len(sections)} sections.")
+            return sections, toc
 
         except Exception as e:
             logger.error(f"Error processing PDF {file_path or getattr(self.pdfs, 'name', 'N/A')}: {e}", exc_info=True)
             return [], []
-
-        return sections, toc
 
 # --- Signal Receiver (Refactored) ---
 
