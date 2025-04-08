@@ -25,6 +25,7 @@ class CourseSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'pdfs', 'videos', 'image', 'file_type', 'duration', 'rating', 'created_at', 
             'professor', 'category', 'pdf_internal_data', 'quizzes'
         ]
+        
     def validate_quizzes(self, value):
         for quiz in value:
             if 'question' not in quiz or 'answers' not in quiz or 'correct_index' not in quiz:
