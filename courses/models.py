@@ -69,11 +69,15 @@ class Course(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     professor = models.ForeignKey(User, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    # Removed _original_file_name, CoursePdfInternal handles this now
-    # Note: The OneToOneField to CoursePdfInternal is added implicitly by the relation
+    question = models.JSONField(default=list, blank=True)  # Store questions as JSON
+    answer = models.JSONField(default=list, blank=True) 
+    correct_answer = models.JSONField(default=list, blank=True)
+
+    quizzes = models.JSONField(default=list, blank=True)  # Store quizzes as JSON
 
     def __str__(self):
         return self.title
+
 
     # --- Updated PDF Extraction Logic ---
     def extract_data_from_pdf(self):
@@ -215,4 +219,3 @@ def process_course_pdf(sender, instance, created, **kwargs):
             logger.info(f"Successfully processed and saved sections for course: {instance.title}")
         except Exception as e:
             logger.error(f"Error in process_course_pdf signal for course {instance.pk}: {e}", exc_info=True)
-    

@@ -1,4 +1,4 @@
-from .models import Category, Course
+from .models import Category, Course 
 from .serializers import CategorySerializer, CourseSerializer
 from rest_framework import viewsets
 
